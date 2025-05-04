@@ -24,19 +24,17 @@ def detect_phone_numbers(image):
         else:
             pil_image = image
         
-        # Use pytesseract to get OCR data
         d = pytesseract.image_to_data(pil_image, output_type=pytesseract.Output.DICT)
         
         phone_numbers = []
         current_number = ""
         current_bbox = None
-        text_color = (0, 0, 0)  # Default black color
+        text_color = (0, 0, 0)
         phone_pattern = re.compile(r'(\+?\d[\d\s\-\(\)]{7,}\d)')
         
         for i in range(len(d['text'])):
             text = d['text'][i].strip()
             if text:
-                # Get text color from the original image
                 if current_bbox:
                     region = pil_image.crop(current_bbox)
                     region_np = np.array(region)
@@ -97,20 +95,18 @@ def replace_text_in_image(image, original_text, new_text, bbox, font_size, text_
             pil_image = image.copy()
         
         draw = ImageDraw.Draw(pil_image)
-        font_size = int(font_size * 0.8)  # Adjusted size
+        font_size = int(font_size * 0.8)
         
         try:
             font = ImageFont.truetype("arial.ttf", font_size)
         except:
             font = ImageFont.load_default()
         
-        # Calculate text position
         text_width = draw.textlength(new_text, font=font)
         text_height = font_size
         x = bbox[0] + (bbox[2] - bbox[0] - text_width) / 2
         y = bbox[1] + (bbox[3] - bbox[1] - text_height) / 2
         
-        # Draw background and text
         draw.rectangle(bbox, fill=(255, 255, 255))
         draw.text((x, y), new_text, font=font, fill=text_color)
         
@@ -130,7 +126,6 @@ def main():
     st.title("📷 Image Tracking Number Editor")
     st.markdown("Upload an image to detect and replace phone numbers while maintaining the original formatting.")
     
-    # Sidebar for upload
     with st.sidebar:
         st.header("Settings")
         uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
@@ -159,7 +154,6 @@ def main():
             except Exception as e:
                 st.error(f"Error processing image: {str(e)}")
     
-    # Main content
     if st.session_state.original_image is not None:
         col1, col2 = st.columns(2)
         
@@ -210,17 +204,25 @@ def main():
             
             if st.session_state.edited_image is not None:
                 st.subheader("Preview")
-                st.image(st.session_state.edited_image, use_container_width=True, caption="Edited image")
                 
-                buf = io.BytesIO()
-                edited_pil = Image.fromarray(cv2.cvtColor(st.session_state.edited_image, cv2.COLOR_BGR2RGB))
-                edited_pil.save(buf, format="PNG")
-                st.download_button(
-                    "Download Edited Image",
-                    buf.getvalue(),
-                    "edited_image.png",
-                    "image/png"
-                )
+                try:
+                    edited_image = st.session_state.edited_image
+                    st.image(edited_image, use_container_width=True, caption="Edited image")
+                    
+                    if isinstance(edited_image, np.ndarray) and edited_image.ndim == 3 and edited_image.shape[2] == 3:
+                        edited_pil = Image.fromarray(cv2.cvtColor(edited_image, cv2.COLOR_BGR2RGB))
+                        buf = io.BytesIO()
+                        edited_pil.save(buf, format="PNG")
+                        st.download_button(
+                            "Download Edited Image",
+                            buf.getvalue(),
+                            "edited_image.png",
+                            "image/png"
+                        )
+                    else:
+                        st.error("Edited image is not in the expected BGR format.")
+                except Exception as e:
+                    st.error(f"Error rendering or downloading the edited image: {str(e)}")
 
 if __name__ == "__main__":
     main()
