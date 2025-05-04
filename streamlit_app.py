@@ -1,12 +1,42 @@
+# Import with error handling
 import streamlit as st
-import cv2
-import numpy as np
-import pytesseract
-from PIL import Image, ImageDraw, ImageFont
-import io
-import re
-from difflib import SequenceMatcher
-import matplotlib.pyplot as plt
+
+try:
+    import cv2
+    import numpy as np
+    import pytesseract
+    from PIL import Image, ImageDraw, ImageFont
+    import io
+    import re
+    from difflib import SequenceMatcher
+    import matplotlib.pyplot as plt
+except ImportError as e:
+    st.error(f"""
+        Missing required packages: {e}
+        
+        Please install dependencies using:
+        pip install opencv-python-headless pytesseract pillow numpy matplotlib streamlit
+        
+        Also ensure Tesseract OCR is installed on your system:
+        - Windows: Download from UB Mannheim
+        - Mac: brew install tesseract
+        - Linux: sudo apt install tesseract-ocr
+    """)
+    st.stop()
+
+# Check for Tesseract executable
+try:
+    pytesseract.get_tesseract_version()
+except Exception as e:
+    st.error(f"""
+        Tesseract OCR not found: {e}
+        
+        Please install Tesseract OCR on your system:
+        - Windows: Download installer from https://github.com/UB-Mannheim/tesseract/wiki
+        - Mac: brew install tesseract
+        - Linux: sudo apt install tesseract-ocr
+    """)
+    st.stop()
 
 # Set page config
 st.set_page_config(
@@ -46,6 +76,13 @@ st.markdown("""
         padding: 2px 5px;
         border-radius: 3px;
     }
+    .error-box {
+        background-color: #ffebee;
+        padding: 15px;
+        border-radius: 5px;
+        border-left: 4px solid #f44336;
+        margin-bottom: 20px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -66,7 +103,11 @@ def detect_phone_numbers(image):
         image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
     
     # Use pytesseract to get OCR data including bounding boxes
-    d = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
+    try:
+        d = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
+    except Exception as e:
+        st.error(f"OCR processing failed: {e}")
+        return []
     
     # Combine text blocks that are likely part of the same phone number
     phone_numbers = []
@@ -216,21 +257,27 @@ def main():
         uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
         
         if uploaded_file is not None:
-            # Read image file
-            file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-            image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-            st.session_state.original_image = image
-            
-            # Detect phone numbers
-            st.session_state.detected_numbers = detect_phone_numbers(image)
-            
-            # Generate proxy numbers
-            for num in st.session_state.detected_numbers:
-                original_num = num['number']
-                if original_num not in st.session_state.replacement_mapping:
-                    st.session_state.replacement_mapping[original_num] = generate_proxy_number(original_num)
-            
-            st.success(f"Detected {len(st.session_state.detected_numbers)} phone numbers in the image.")
+            try:
+                # Read image file
+                file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+                image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+                st.session_state.original_image = image
+                
+                # Detect phone numbers
+                st.session_state.detected_numbers = detect_phone_numbers(image)
+                
+                # Generate proxy numbers
+                for num in st.session_state.detected_numbers:
+                    original_num = num['number']
+                    if original_num not in st.session_state.replacement_mapping:
+                        st.session_state.replacement_mapping[original_num] = generate_proxy_number(original_num)
+                
+                if st.session_state.detected_numbers:
+                    st.success(f"Detected {len(st.session_state.detected_numbers)} phone numbers in the image.")
+                else:
+                    st.warning("No phone numbers detected in this image.")
+            except Exception as e:
+                st.error(f"Error processing image: {e}")
     
     # Main content
     col1, col2 = st.columns(2)
@@ -238,11 +285,14 @@ def main():
     with col1:
         if st.session_state.original_image is not None:
             st.subheader("Original Image")
-            annotated_image = display_image_with_boxes(
-                st.session_state.original_image, 
-                st.session_state.detected_numbers
-            )
-            st.image(annotated_image, use_column_width=True, caption="Detected phone numbers highlighted")
+            try:
+                annotated_image = display_image_with_boxes(
+                    st.session_state.original_image, 
+                    st.session_state.detected_numbers
+                )
+                st.image(annotated_image, use_column_width=True, caption="Detected phone numbers highlighted")
+            except Exception as e:
+                st.error(f"Error displaying image: {e}")
     
     with col2:
         if st.session_state.original_image is not None:
@@ -262,24 +312,27 @@ def main():
                         st.session_state.replacement_mapping[original_num] = new_num
                 
                 if st.button("Apply Changes"):
-                    # Create a copy of the original image
-                    edited_image = st.session_state.original_image.copy()
-                    if isinstance(edited_image, np.ndarray):
-                        edited_image = Image.fromarray(cv2.cvtColor(edited_image, cv2.COLOR_BGR2RGB))
-                    
-                    # Apply all replacements
-                    for num in st.session_state.detected_numbers:
-                        original_num = num['number']
-                        new_num = st.session_state.replacement_mapping.get(original_num, original_num)
-                        edited_image = replace_text_in_image(
-                            edited_image,
-                            original_num,
-                            new_num,
-                            num['bbox']
-                        )
-                    
-                    st.session_state.edited_image = edited_image
-                    st.success("Changes applied successfully!")
+                    try:
+                        # Create a copy of the original image
+                        edited_image = st.session_state.original_image.copy()
+                        if isinstance(edited_image, np.ndarray):
+                            edited_image = Image.fromarray(cv2.cvtColor(edited_image, cv2.COLOR_BGR2RGB))
+                        
+                        # Apply all replacements
+                        for num in st.session_state.detected_numbers:
+                            original_num = num['number']
+                            new_num = st.session_state.replacement_mapping.get(original_num, original_num)
+                            edited_image = replace_text_in_image(
+                                edited_image,
+                                original_num,
+                                new_num,
+                                num['bbox']
+                            )
+                        
+                        st.session_state.edited_image = edited_image
+                        st.success("Changes applied successfully!")
+                    except Exception as e:
+                        st.error(f"Error applying changes: {e}")
     
     # Display edited image if available
     if st.session_state.edited_image is not None:
@@ -297,20 +350,23 @@ def main():
         # Download button
         st.markdown("---")
         st.subheader("Download Edited Image")
-        buf = io.BytesIO()
-        if isinstance(st.session_state.edited_image, np.ndarray):
-            edited_pil = Image.fromarray(cv2.cvtColor(st.session_state.edited_image, cv2.COLOR_BGR2RGB))
-        else:
-            edited_pil = st.session_state.edited_image
-        edited_pil.save(buf, format="PNG")
-        byte_im = buf.getvalue()
-        
-        st.download_button(
-            label="Download Edited Image",
-            data=byte_im,
-            file_name="edited_image.png",
-            mime="image/png"
-        )
+        try:
+            buf = io.BytesIO()
+            if isinstance(st.session_state.edited_image, np.ndarray):
+                edited_pil = Image.fromarray(cv2.cvtColor(st.session_state.edited_image, cv2.COLOR_BGR2RGB))
+            else:
+                edited_pil = st.session_state.edited_image
+            edited_pil.save(buf, format="PNG")
+            byte_im = buf.getvalue()
+            
+            st.download_button(
+                label="Download Edited Image",
+                data=byte_im,
+                file_name="edited_image.png",
+                mime="image/png"
+            )
+        except Exception as e:
+            st.error(f"Error preparing download: {e}")
 
 if __name__ == "__main__":
     main()
